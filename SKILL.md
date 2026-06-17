@@ -4,7 +4,7 @@ description: Generate SEO-compliant Title Tags, Meta Descriptions, and H1 Tags f
 metadata:
   type: skill
   owner: seo-tools@growisto.com
-  version: 2.7
+  version: 2.9
 ---
 
 # SEO Title, Meta Description & H1 Generator
@@ -33,7 +33,7 @@ The user is required to provide **exactly these four fields per URL** — nothin
 | # | Field | Required | Description |
 |---|---|---|---|
 | 1 | **Page URL or Topic** | ✅ | Either a real URL (`https://...`) **or** a topic description string (e.g., "Blog Page on Real Time Voice AI", "Category Page on Yoga Mats", "Product Page for Bluetooth Speakers"). See the URL vs Topic Detection section below for how each is handled. |
-| 2 | **Page Type** | ✅ | One of: `Blog`, `Blog Listicle`, `Collection`, `Product`, `Service`. |
+| 2 | **Page Type** | ✅ | One of: `Home`, `Blog`, `Blog Listicle`, `Collection`, `Product`, `Service`. (`Home Page` and `Service Page` style suffixes are accepted as synonyms — the skill will normalize them.) |
 | 3 | **Primary Keyword** | ✅ | The single main keyword the page targets. |
 | 4 | **Secondary Keywords** | ✅ | 1–3 supporting keywords. |
 
@@ -167,6 +167,8 @@ Two rows may share the CTA verb (e.g., both use "Shop") but must NOT share the f
 
 | Page Type | CTA verb across batch | Reason |
 |---|---|---|
+| Home-SaaS | **Should vary** (Book / Try / Get / Discover / Start) | Same as Service - no fixed convention for SaaS homepages |
+| Home-Ecom | **Allowed to repeat** (Shop / Browse / Discover) | Same as Collection - site-wide brand consistency |
 | Ecom Collection | **Allowed to repeat** (Shop / Browse) | Site-wide consistency improves brand UX |
 | Ecom Product | **Allowed to repeat** (Buy / Order / Get) | Strong transactional convention |
 | Service / SaaS | **Should vary** (Book / Try / Get / See / Discover / Start) | No fixed convention; variation lifts CTR |
@@ -217,6 +219,7 @@ This workflow is engineered to minimize token cost without compromising the non-
 3. **Infer supporting context:**
    - **Real URL path:** brand name (from domain or on-page branding), geography / language (from page copy + domain TLD), primary CTA verb for ecommerce/service pages.
    - **Topic path:** brand cannot be inferred — either ask user or draft brand-agnostic copy. Geography / language defaults to global English unless the topic string says otherwise.
+   - **If page_type = Home:** run the Home Type Tone Detection (see dedicated section above). Classify as Home-SaaS or Home-Ecom from page content (real URL path) or topic text (topic path). Use the chosen sub-type's CTA cues and tone for the rest of the workflow.
 4. **Live SERP research using snippets only (Optimizations A + G):**
    - **First check the batch SERP cache** for this primary keyword. If a cached entry exists, reuse it — do not call `WebSearch`.
    - Otherwise, run **one** `WebSearch` on the primary keyword, capture the top 10 organic results' **titles, meta descriptions, and URLs from the snippets**, and store them in the cache under this keyword.
@@ -290,11 +293,53 @@ This workflow is engineered to minimize token cost without compromising the non-
 
 | Page Type        | Intent           | Tone & CTA cues                                    |
 |------------------|------------------|----------------------------------------------------|
+| Home             | Mixed (commercial brand-level)  | **Tone is detected from the page content — see "Home Type Tone Detection" section below.** |
 | Blog             | Informational    | Curiosity, value, learning. No commercial CTA.     |
 | Blog Listicle    | Informational/Commercial | Numbered angle, "top", "best", year, comparison. |
 | Collection       | Commercial/Transactional | Shop/Browse CTA, range/variety, offers.      |
 | Product          | Transactional    | Buy/Order CTA, key spec, USP, price/offer if known. |
 | Service          | Commercial       | Hire/Get/Book CTA, outcome-led benefit.            |
+
+## Home Type Tone Detection (apply when page_type = Home)
+
+The `Home` page type is a single category that covers brand homepages across business models. Its tone is **detected from the actual page content** — not declared by the user — because a SaaS homepage and an ecom homepage carry the same `Home` label but need very different copy.
+
+### Detection logic (run during step 3 of the per-URL loop)
+
+After the lean `WebFetch` (step 2), classify the homepage as one of two sub-types based on these signals:
+
+| Sub-type | Trigger signals on the page |
+|---|---|
+| **Home-SaaS** | "Book a demo", "Start free trial", "Get started", pricing-tiers section, feature-list pages linked from nav, no cart/basket UI, no product prices on the page itself |
+| **Home-Ecom** | Add to cart buttons, product grid with prices, "Shop now", "Browse our collection", "Free shipping over X", checkout-related UI, currency symbols against products |
+
+If signals are mixed or ambiguous, default to **Home-SaaS** for `.io / .ai / .app / saas` TLDs or domains containing those tokens; default to **Home-Ecom** otherwise. Note the chosen sub-type in the row's `Rationale`.
+
+### Sub-type tone & CTA cues
+
+| Sub-type | CTA cues | Title/Meta emphasis |
+|---|---|---|
+| **Home-SaaS** | Book / Try / Get / Discover / Start | Outcome-led benefit. Name the brand prominently. Highlight the differentiator (what only this product does). Avoid generic "best software" claims. |
+| **Home-Ecom** | Shop / Browse / Discover | Range, variety, and trust signals (free shipping, fast delivery, authentic, X-day returns). Brand name woven in naturally. |
+
+### Topic-description Home pages
+
+If the user provides a topic string like `"Home Page on a UK Indian grocery store"` (no URL to fetch), the sub-type must be **inferred from the topic text alone**. Look for keywords like "store", "shop", "grocery", "marketplace" (Ecom) versus "software", "platform", "tool", "AI", "app" (SaaS). Note the inferred sub-type and the basis in the row's `Rationale`.
+
+### Page-type normalization (synonyms accepted)
+
+When parsing user input, normalize these common variants to the canonical page-type values before validation:
+
+| User-provided value | Normalized to |
+|---|---|
+| `Home Page`, `Homepage`, `home`, `HomePage` | `Home` |
+| `Blog Page`, `Article` | `Blog` |
+| `Blog Listicle Page`, `Listicle`, `Top X Blog`, `Roundup` | `Blog Listicle` |
+| `Collection Page`, `Category`, `Category Page`, `PLP` | `Collection` |
+| `Product Page`, `PDP` | `Product` |
+| `Service Page`, `Service Landing`, `Solution Page` | `Service` |
+
+Do this normalization silently. The user does not need to know the exact canonical strings — only that they should describe the page type clearly.
 
 ## Multi-Page / Batch Requests
 Each page's outputs must be unique — derived from that page's actual content. Never reuse the same skeleton/template across pages. The cross-row uniqueness step (workflow step 9) is mandatory for batches.
