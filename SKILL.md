@@ -4,7 +4,7 @@ description: Generate SEO-compliant Title Tags, Meta Descriptions, and H1 Tags f
 metadata:
   type: skill
   owner: seo-tools@growisto.com
-  version: 2.6
+  version: 2.7
 ---
 
 # SEO Title, Meta Description & H1 Generator
@@ -32,7 +32,7 @@ The user is required to provide **exactly these four fields per URL** — nothin
 
 | # | Field | Required | Description |
 |---|---|---|---|
-| 1 | **Page URL** | ✅ | The page to optimize (single URL or batch). |
+| 1 | **Page URL or Topic** | ✅ | Either a real URL (`https://...`) **or** a topic description string (e.g., "Blog Page on Real Time Voice AI", "Category Page on Yoga Mats", "Product Page for Bluetooth Speakers"). See the URL vs Topic Detection section below for how each is handled. |
 | 2 | **Page Type** | ✅ | One of: `Blog`, `Blog Listicle`, `Collection`, `Product`, `Service`. |
 | 3 | **Primary Keyword** | ✅ | The single main keyword the page targets. |
 | 4 | **Secondary Keywords** | ✅ | 1–3 supporting keywords. |
@@ -47,6 +47,43 @@ The user is required to provide **exactly these four fields per URL** — nothin
 - If any of the four fields is missing for any URL, **stop and ask the user only for the missing field(s)**. Do not proceed with partial inputs.
 - If the user pastes only URLs (no page type, no keywords), prompt them with: *"This skill needs page type, primary keyword, and secondary keywords for each URL. Please provide them — preferably as a CSV with columns: url, page_type, primary_keyword, secondary_keywords."*
 - Do **not** auto-derive page type or keywords from the page. The user has explicitly chosen to provide them.
+- **Treat `-`, blank, `N/A`, `none`, or `tbd` in the Secondary Keywords cell as "no SK provided".** In that case, do not stop the batch — derive a sensible secondary keyword from the topic and primary keyword, and flag the row with `(derived - SK was '-' in input)` so the user can review.
+
+### URL vs Topic Detection (mandatory — apply per row)
+
+Field 1 accepts two distinct shapes. Detect which one was provided and branch the workflow accordingly.
+
+**It is a real URL when** the value:
+- Starts with `http://`, `https://`, or `www.`
+- Contains a `.` followed by a top-level domain (`.com`, `.co.uk`, `.io`, `.in`, etc.) AND has no internal spaces in the domain portion
+- Looks like a path after the domain (e.g., `/collections/yoga-mats`)
+
+**It is a topic description when** the value:
+- Does not start with `http`, `https`, or `www`
+- Contains spaces in what would be the domain part
+- Reads like English ("Blog Page on …", "Category Page on …", "Product Page for …", "Service Page about …")
+- Has no recognizable domain or path structure
+
+#### Behavior — real URL path
+1. Lean `WebFetch` on the URL to read title, meta, H1, H2s, first ~300 words, CTA, price, schema.
+2. Run live `WebSearch` on the primary keyword for SERP signals.
+3. Run `site:<domain>` uniqueness check (or domain inventory check in batch mode).
+4. Use page content + SERP + brand voice to draft compliant Title / Meta / H1.
+5. Sheet 2 of the Excel includes real top-5 competitor domains, patterns, intent, and modifiers.
+
+#### Behavior — topic description path
+1. **Skip the page fetch entirely** — there is no page to fetch.
+2. Use the topic description string itself as the source of page context (the words after "Blog Page on" / "Category Page on" / etc. describe what the page is about).
+3. Run live `WebSearch` on the primary keyword for SERP signals — this is still possible and recommended unless the user explicitly says "draft from topic only, do not use competitors".
+4. **Skip the `site:` uniqueness check** — no domain is known. Note in the row's `Compliance` column that site-wide uniqueness was not verified.
+5. **Inferred-brand handling** — without a real URL, brand name cannot be inferred from the domain. Either ask the user for the brand, or draft brand-agnostic copy and flag the row.
+6. Sheet 2 still reports SERP insights if WebSearch ran; otherwise it should explicitly state "Not used in this round - drafted purely from topic and primary keyword".
+
+#### Mixed batches
+If the input contains a mix of real URLs and topic descriptions, process each row according to its detected type. Do not block the batch.
+
+#### Output transparency
+In the final summary returned to the user, explicitly state how many rows were processed as real URLs vs topic descriptions, so the user knows which rows had full SERP + page-content grounding and which were topic-only drafts.
 
 ### Everything else is the skill's responsibility
 
@@ -172,13 +209,14 @@ This workflow is engineered to minimize token cost without compromising the non-
 ### Per-URL Loop
 
 1. **Read the user-provided inputs for this URL** — page type, primary keyword, secondary keywords. These are authoritative; do not override them based on page content.
-2. **Get page content (lean):**
+1a. **Detect URL vs Topic** (per the "URL vs Topic Detection" section above). Branch the rest of the workflow based on which shape was provided.
+2. **Get page content (lean) — REAL URL ONLY:**
    - Call `WebFetch` once. Extract **only**: `<title>`, `<meta name="description">`, H1, H2 headings, first ~300 words, primary CTA, product/service name, price, and any visible schema fields (Optimization D). Discard the rest.
    - The page content is used only to understand the page's actual offering, USP, and tone — NOT to override the user's page type or keywords.
-3. **Infer supporting context** from page content + domain:
-   - Brand name (from domain or on-page branding).
-   - Geography / language (from page copy + domain TLD).
-   - Primary CTA verb (Shop / Buy / Order / Get / Discover / Hire / Book) for ecommerce/service pages.
+   - **If the row was detected as a topic description, skip this step entirely.** Use the topic string itself as page context.
+3. **Infer supporting context:**
+   - **Real URL path:** brand name (from domain or on-page branding), geography / language (from page copy + domain TLD), primary CTA verb for ecommerce/service pages.
+   - **Topic path:** brand cannot be inferred — either ask user or draft brand-agnostic copy. Geography / language defaults to global English unless the topic string says otherwise.
 4. **Live SERP research using snippets only (Optimizations A + G):**
    - **First check the batch SERP cache** for this primary keyword. If a cached entry exists, reuse it — do not call `WebSearch`.
    - Otherwise, run **one** `WebSearch` on the primary keyword, capture the top 10 organic results' **titles, meta descriptions, and URLs from the snippets**, and store them in the cache under this keyword.

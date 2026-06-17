@@ -39,12 +39,18 @@ Copy `SKILL.md` into Claude Code's skills directory:
 
 | Field | Required | Example |
 |---|---|---|
-| **Page URL** | ✅ | `https://brand.com/shop/yoga-mats` |
+| **Page URL or Topic** | ✅ | `https://brand.com/shop/yoga-mats` **OR** `Blog Page on Voice AI for Indian Languages` |
 | **Page Type** | ✅ | `Collection` (or Blog / Blog Listicle / Product / Service) |
 | **Primary Keyword** | ✅ | `yoga mats` |
-| **Secondary Keywords** | ✅ | `non slip yoga mat, eco yoga mat` |
+| **Secondary Keywords** | ✅ | `non slip yoga mat, eco yoga mat` (use `-` if none — the skill will derive one and flag the row) |
 
-The skill **stops and asks** if any field is missing — it will not auto-derive page type or keywords.
+The skill **stops and asks** if any required field is missing — it will not auto-derive page type or keywords.
+
+**Field 1 accepts two shapes:**
+- A **real URL** (starts with `http`, `https`, or `www`) — the skill fetches the page, runs SERP research, and does site-wide uniqueness checks.
+- A **topic description** ("Blog Page on …", "Category Page on …", "Product Page for …") — the skill skips the page fetch, drafts from topic + primary keyword, and notes that site-wide uniqueness was not verified.
+
+Mixed batches are fine — each row is detected and handled appropriately.
 
 ### 3. Invoke it
 
